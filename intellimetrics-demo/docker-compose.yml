@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # Database - MongoDB (No authentication - VULNERABLE)
+  mongo:
+    image: mongo:7.0
+    container_name: intellimetrics-mongo
+    ports:
+      - "27017:27017"  # VULNERABILITY: Exposed on host
+    volumes:
+      - mongo_data:/data/db
+      - ./seed-database.js:/docker-entrypoint-initdb.d/seed.js:ro
+    networks:
+      - backend_network
+      - internal_network
+
+  # Main API Gateway
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: intellimetrics-api
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - ENV=development
+    depends_on:
+      - mongo
+    networks:
+      - dmz_network
+      - internal_network
+
+  # Authentication Service (Password vulnerabilities)
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: intellimetrics-auth
+    ports:
+      - "8081:8081"
+    networks:
+      - internal_network
+
+  # File Service (LFI/RFI vulnerabilities)
+  file-service:
+    build:
+      context: ./file-service
+      dockerfile: Dockerfile
+    container_name: intellimetrics-files
+    ports:
+      - "8082:8082"
+    networks:
+      - internal_network
+
+  # SSH Server (Weak credentials, pivoting target)
+  ssh-server:
+    build:
+      context: ./ssh-server
+      dockerfile: Dockerfile
+    container_name: intellimetrics-ssh
+    ports:
+      - "2222:22"  # SSH on port 2222
+    networks:
+      - backend_network
+
+  # Frontend - Astro Application (Optional - comment out for backend-only testing)
+  # frontend:
+  #   build:
+  #     context: ./frontend/astro-app
+  #     dockerfile: Dockerfile
+  #   container_name: intellimetrics-frontend
+  #   ports:
+  #     - "4321:4321"
+  #   environment:
+  #     - PUBLIC_API_URL=http://localhost:8080
+  #     - PUBLIC_AUTH_URL=http://localhost:8081
+  #     - PUBLIC_FILE_URL=http://localhost:8082
+  #   depends_on:
+  #     - api
+  #     - auth-service
+  #     - file-service
+  #   networks:
+  #     - dmz_network
+
+networks:
+  # DMZ: Public-facing services
+  dmz_network:
+    driver: bridge
+  # Internal: Microservices
+  internal_network:
+    driver: bridge
+  # Backend: Database and SSH
+  backend_network:
+    driver: bridge
+
+volumes:
+  mongo_data:
